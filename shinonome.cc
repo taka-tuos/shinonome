@@ -550,6 +550,8 @@ void update(Player &player, Option &option, Score &score) {
   }
 }
 
+int tbl_lane[] = { 0,/*r*/7,/*w*/14,/*b*/19,/*w*/26,/*b*/31,/*w*/38,/*b*/43,/*w*/50 };
+
 void render(Player &player, Option &option, Score &score) {
   int w = getmaxx(stdscr);
   int h = getmaxy(stdscr);
@@ -558,6 +560,10 @@ void render(Player &player, Option &option, Score &score) {
   for (auto &point : buffer)
     mvaddstr(point.y, point.x, "        ");
   buffer.clear();
+  
+  attrset(A_NORMAL);
+
+  for(int i=0; i<LANES_COUNT+1; i++) mvvline(0, tbl_lane[i], '|', 512);
 
   for (int i = 0; i < LANES_COUNT; i++) {
     switch (i) {
@@ -613,7 +619,7 @@ void render(Player &player, Option &option, Score &score) {
   mvprintw(h - 4, 8 * LANES_COUNT, "%6d", score.judges[2]);
   mvprintw(h - 3, 8 * LANES_COUNT, "%6d", score.judges[3]);
 
-  mvprintw(h - 10, 5 * LANES_COUNT, "%6d", score.combo);
+  mvprintw(h - 10, tbl_lane[LANES_COUNT]+2+8, "%6d", score.combo);
   if (player.lastJudgeTime > 0) {
     if (player.lastJudgeTime + 500 < player.currentTime) {
       player.lastJudge = 4;
@@ -623,9 +629,9 @@ void render(Player &player, Option &option, Score &score) {
       player.lastTiming = 2;
     if (player.lastTiming == 0) attrset(COLOR_PAIR(COLOR_BLUE)); else
     if (player.lastTiming == 1) attrset(COLOR_PAIR(COLOR_RED));
-    mvprintw(h - 11, 4 * LANES_COUNT, "  %s", JUDGES_TIMING[player.lastTiming].c_str());
+    mvprintw(h - 11, tbl_lane[LANES_COUNT]+2,  "  %s", JUDGES_TIMING[player.lastTiming].c_str());
     attrset(0);
-    mvprintw(h - 10, 4 * LANES_COUNT, "%s", JUDGES_TEXTS[player.lastJudge].c_str());
+    mvprintw(h - 10, tbl_lane[LANES_COUNT]+2, "%s", JUDGES_TEXTS[player.lastJudge].c_str());
   }
 
   refresh();
@@ -636,13 +642,14 @@ int getPos(Player &player, Option &option, double beat, int h) {
 }
 
 void blit(int y, int i, Points &buffer) {
-  int x = 8 * i;
-  mvaddstr(y, x, "[######]");
+  int x = tbl_lane[i]; //8 * i;
+  if(i >= 2 && (i % 2) == 0) mvaddstr(y, x, "[####]");
+  else mvaddstr(y, x, "[######]");
   buffer.push_back({ x, y });
 }
 
 void drawBar(int y1, int y2, int i, Points &buffer) {
-  int x = 8 * i;
+  int x = tbl_lane[i]; //8 * i;
   int b = (y2 < 0) ? 0 : y2 + 1;
   for (int j = b; j < y1; j++) {
     if ((j - y2) & 1) mvaddstr(j, x, " |    | ");
