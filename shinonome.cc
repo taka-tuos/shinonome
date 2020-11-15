@@ -25,6 +25,7 @@
 #include <SDL2/SDL_mixer.h>
 #include <thread>
 #include <unistd.h>
+#include <time.h>
 
 #define MAX_SPEED          5.00
 #define LANES_COUNT        8
@@ -119,6 +120,7 @@ struct Player {
   Chips_i    bgm;
   Lane       lanes[LANES_COUNT];
   unsigned   inputs[LANES_COUNT];
+  long       input_times[LANES_COUNT];
   int        judges[LANES_COUNT];
   int        totalNotes;
   int        gameover;
@@ -470,8 +472,10 @@ void newGame(BMS &bms, Player &player) {
   player.bgm        = bms.bgms.begin();
   player.totalNotes = bms.totalNotes;
 
-  for (int i = 0; i < LANES_COUNT; i++)
+  for (int i = 0; i < LANES_COUNT; i++) {
+    player.input_times[i] = getTime() - 100;
     player.lanes[i] = { bms.lanes[i].begin(), bms.lanes[i].begin() };
+  }
 }
 
 void play(Player &player, Option &option, Score &score) {
@@ -488,6 +492,7 @@ void play(Player &player, Option &option, Score &score) {
   use_default_colors();
   init_pair(COLOR_RED , COLOR_RED , -1);
   init_pair(COLOR_BLUE, COLOR_BLUE, -1);
+  init_pair(COLOR_CYAN, -1, COLOR_CYAN);
   std::freopen("/dev/null", "w", stderr);
 
   player.startTime = getTime();
@@ -550,7 +555,17 @@ void update(Player &player, Option &option, Score &score) {
   }
 }
 
-int tbl_lane[] = { 0,/*r*/7,/*w*/14,/*b*/19,/*w*/26,/*b*/31,/*w*/38,/*b*/43,/*w*/50 };
+//int tbl_lane[] = { 0,/*r*/7,/*w*/14,/*b*/19,/*w*/26,/*b*/31,/*w*/38,/*b*/43,/*w*/50 };
+
+int laneOffset(int ind) {
+  int ofs = 0;
+  
+  for(int i=0;i<ind;i++) {
+    ofs += i >= 2 && (i % 2) == 0 ? 5 : 7;
+  }
+  
+  return ofs;
+}
 
 void render(Player &player, Option &option, Score &score) {
   int w = getmaxx(stdscr);
@@ -563,7 +578,23 @@ void render(Player &player, Option &option, Score &score) {
   
   attrset(A_NORMAL);
 
-  for(int i=0; i<LANES_COUNT+1; i++) mvvline(0, tbl_lane[i], '|', 512);
+  for(int i=0; i<LANES_COUNT+1; i++) mvvline(0, laneOffset(i), '|', 512);
+  
+  for(int i=0; i<LANES_COUNT; i++) {
+    for(int j=laneOffset(i)+1;j<laneOffset(i+1);j++) {
+      for(int k=h-7;k<h;k++) {
+        int dut = getTime() - player.input_times[i];
+        if(dut < 50) {
+          attrset(A_NORMAL | COLOR_PAIR(COLOR_CYAN));
+        } else {
+          attrset(A_NORMAL);
+        }
+        mvaddch(k, j, ' ');
+      }
+    }
+  }
+  
+  attrset(A_NORMAL);
 
   for (int i = 0; i < LANES_COUNT; i++) {
     switch (i) {
@@ -619,7 +650,7 @@ void render(Player &player, Option &option, Score &score) {
   mvprintw(h - 4, 8 * LANES_COUNT, "%6d", score.judges[2]);
   mvprintw(h - 3, 8 * LANES_COUNT, "%6d", score.judges[3]);
 
-  mvprintw(h - 10, tbl_lane[LANES_COUNT]+2+8, "%6d", score.combo);
+  mvprintw(h - 10, laneOffset(LANES_COUNT)+2+8, "%6d", score.combo);
   if (player.lastJudgeTime > 0) {
     if (player.lastJudgeTime + 500 < player.currentTime) {
       player.lastJudge = 4;
@@ -629,27 +660,27 @@ void render(Player &player, Option &option, Score &score) {
       player.lastTiming = 2;
     if (player.lastTiming == 0) attrset(COLOR_PAIR(COLOR_BLUE)); else
     if (player.lastTiming == 1) attrset(COLOR_PAIR(COLOR_RED));
-    mvprintw(h - 11, tbl_lane[LANES_COUNT]+2,  "  %s", JUDGES_TIMING[player.lastTiming].c_str());
+    mvprintw(h - 11, laneOffset(LANES_COUNT)+2,  "  %s", JUDGES_TIMING[player.lastTiming].c_str());
     attrset(0);
-    mvprintw(h - 10, tbl_lane[LANES_COUNT]+2, "%s", JUDGES_TEXTS[player.lastJudge].c_str());
+    mvprintw(h - 10, laneOffset(LANES_COUNT)+2, "%s", JUDGES_TEXTS[player.lastJudge].c_str());
   }
 
   refresh();
 }
 
 int getPos(Player &player, Option &option, double beat, int h) {
-  return h * option.speed * (player.beat - beat) / LIFETIME_BEATS + h;
+  return (h * option.speed * (player.beat - beat) + LIFETIME_BEATS/2) / LIFETIME_BEATS + h;
 }
 
 void blit(int y, int i, Points &buffer) {
-  int x = tbl_lane[i]; //8 * i;
+  int x = laneOffset(i); //8 * i;
   if(i >= 2 && (i % 2) == 0) mvaddstr(y, x, "[####]");
   else mvaddstr(y, x, "[######]");
   buffer.push_back({ x, y });
 }
 
 void drawBar(int y1, int y2, int i, Points &buffer) {
-  int x = tbl_lane[i]; //8 * i;
+  int x = laneOffset(i); //8 * i;
   int b = (y2 < 0) ? 0 : y2 + 1;
   for (int j = b; j < y1; j++) {
     if ((j - y2) & 1) mvaddstr(j, x, " |    | ");
@@ -664,6 +695,9 @@ void judge(Player &player, Option &option, Score &score, Lane &lane, int index) 
     return;
   }
   setLastJudge(player, 3, 1);
+  
+  int ch = lane.begin->value;
+  Mix_PlayChannel(ch, player.chunkTable.at(ch), 0);
 
   double time = (lane.begin->beat - player.beat) * 60 / player.bpm;
   if (time >= JUDGE_BORDER_GOOD) return;
@@ -673,9 +707,6 @@ void judge(Player &player, Option &option, Score &score, Lane &lane, int index) 
     lane.begin++;
     return;
   }
-
-  int ch = lane.begin->value;
-  Mix_PlayChannel(ch, player.chunkTable.at(ch), 0);
 
   int    judge = 0;
   double abs   = (time < 0) ? -time : time;
@@ -786,6 +817,7 @@ void handler(Player &player, Option &option, Score &score) {
   for (int i = 0; i < LANES_COUNT; i++) {
     if (input != option.keyBinds[i]) continue;
     player.inputs[i] |= 1;
+    player.input_times[i] = getTime();
     Lane &lane = player.lanes[i];
     judge(player, option, score, lane, i);
     return;
